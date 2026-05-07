@@ -227,7 +227,7 @@ document.getElementById('btn-mars').addEventListener('click', async () => {
 
   /* Launch animation */
   statusEl.textContent = '正在发射……';
-  const { behavior, promise } = marsScene.launch(color, state.lastChoice, 7);
+  const { behavior, promise } = marsScene.launch(color, state.lastChoice, state.primaryCore, 7);
   await promise;
 
   /* Settled */
