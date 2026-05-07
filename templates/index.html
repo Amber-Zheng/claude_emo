@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMO · 情绪疏解</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">EMO</div>
+      <p class="tagline">多虑型人群的情绪疏解空间</p>
+    </header>
+
+    <!-- Step 1: Input -->
+    <section id="step-input" class="card step active">
+      <div class="step-label">地球 · 自由表达</div>
+      <h2>此刻，你在想什么？</h2>
+      <p class="hint">可以是混乱的、碎片化的、不完整的——任何都行。</p>
+      <textarea id="user-input" placeholder="把脑子里的东西倒出来……" rows="6"></textarea>
+      <button id="btn-analyze" class="btn btn-primary">分析我的情绪</button>
+    </section>
+
+    <!-- Step 2: Loading -->
+    <section id="step-loading" class="card step">
+      <div class="loader"></div>
+      <p class="loading-text">正在感受你说的话……</p>
+    </section>
+
+    <!-- Step 3: Analysis Result -->
+    <section id="step-analysis" class="card step">
+      <div class="step-label">情绪归纳</div>
+
+      <div class="analysis-block">
+        <div class="block-title">当前情绪总结</div>
+        <p id="emotion-summary" class="emotion-summary"></p>
+      </div>
+
+      <div class="analysis-block">
+        <div class="block-title">触发这些感受的是</div>
+        <p id="emotion-trigger" class="emotion-trigger"></p>
+      </div>
+
+      <!-- Debug: translation output -->
+      <div id="debug-panel" class="analysis-block debug-panel" style="display:none">
+        <div class="block-title debug-title">🔍 翻译结果（调试用）</div>
+        <p id="debug-translated" class="debug-text"></p>
+      </div>
+
+      <!-- 3-Layer Emotion Structure -->
+      <div class="analysis-block">
+        <div class="block-title">情绪轮 · Junto 三层结构</div>
+        <div class="wheel-layers">
+
+          <div class="layer-section">
+            <div class="layer-header">
+              <span class="layer-num">L1</span>
+              <span class="layer-name">核心情绪</span>
+              <span class="layer-desc">Junto 内圈 · 7 类</span>
+            </div>
+            <div id="layer1-pills" class="layer1-pills"></div>
+          </div>
+
+          <div class="layer-connector">
+            <div class="connector-line"></div>
+            <span class="connector-label">细化</span>
+            <div class="connector-line"></div>
+          </div>
+
+          <div class="layer-section">
+            <div class="layer-header">
+              <span class="layer-num">L2</span>
+              <span class="layer-name">细化情绪</span>
+              <span class="layer-desc">Junto 中圈</span>
+            </div>
+            <div id="layer2-groups"></div>
+          </div>
+
+          <div class="layer-connector">
+            <div class="connector-line"></div>
+            <span class="connector-label">溯源</span>
+            <div class="connector-line"></div>
+          </div>
+
+          <div class="layer-section">
+            <div class="layer-header">
+              <span class="layer-num">L3</span>
+              <span class="layer-name">具体感受</span>
+              <span class="layer-desc">GoEmotions · 28 类</span>
+            </div>
+            <div id="layer3-rows"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Detected emotion tags -->
+      <div class="analysis-block">
+        <div class="block-title">主要情绪标签</div>
+        <div id="emotion-labels" class="emotion-labels"></div>
+      </div>
+
+      <div class="choice-prompt">你想如何处理这种感受？</div>
+      <div class="choices">
+        <button class="choice-btn" data-choice="F1">
+          <span class="choice-icon">🌱</span>
+          <span class="choice-text">接受它</span>
+        </button>
+        <button class="choice-btn" data-choice="F2">
+          <span class="choice-icon">🍃</span>
+          <span class="choice-text">放下它</span>
+        </button>
+        <button class="choice-btn" data-choice="F3">
+          <span class="choice-icon">🔭</span>
+          <span class="choice-text">重新理解它</span>
+        </button>
+        <button class="choice-btn" data-choice="F4">
+          <span class="choice-icon">💬</span>
+          <span class="choice-text">说出来</span>
+        </button>
+        <button class="choice-btn" data-choice="F5">
+          <span class="choice-icon">☁️</span>
+          <span class="choice-text">暂时不处理</span>
+        </button>
+        <button class="choice-btn" data-choice="F6">
+          <span class="choice-icon">✦</span>
+          <span class="choice-text">转化为一个小行动</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Step 4: Feedback -->
+    <section id="step-feedback" class="card step">
+      <div class="step-label">情绪循环完成</div>
+      <div class="feedback-text" id="feedback-text"></div>
+      <div class="cycle-actions">
+        <button id="btn-continue" class="btn btn-secondary">继续表达</button>
+        <button id="btn-end" class="btn btn-ghost">结束本轮</button>
+      </div>
+    </section>
+
+    <!-- Step 5: End -->
+    <section id="step-end" class="card step">
+      <div class="end-icon">✦</div>
+      <h2>今天辛苦了。</h2>
+      <p class="hint">你愿意把这些说出来，已经很了不起了。</p>
+      <button id="btn-restart" class="btn btn-primary">重新开始</button>
+    </section>
+
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
