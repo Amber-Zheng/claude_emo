@@ -1,12 +1,13 @@
 /* ── App state ── */
-const state = { text: '', primaryEmotion: '', primaryCore: '' };
+const state = { text: '', primaryEmotion: '', primaryCore: '', lastChoice: 'F1' };
 
-/* ── DOM refs ── */
+/* ── Step refs ── */
 const steps = {
   input:    document.getElementById('step-input'),
   loading:  document.getElementById('step-loading'),
   analysis: document.getElementById('step-analysis'),
   feedback: document.getElementById('step-feedback'),
+  mars:     document.getElementById('step-mars'),
   end:      document.getElementById('step-end'),
 };
 
@@ -49,9 +50,6 @@ document.getElementById('btn-analyze').addEventListener('click', async () => {
 
 /* ══════════════════════════════════════════════════════
    JUNTO 3-LAYER DISPLAY
-   L1 → 7 Junto core emotions
-   L2 → Junto mid-ring sub-emotions (mapped from GoEmotions)
-   L3 → Raw GoEmotions labels + scores
 ══════════════════════════════════════════════════════ */
 const CORES  = ['FEAR', 'ANGER', 'DISGUST', 'SADNESS', 'SURPRISE', 'JOY', 'LOVE'];
 const COLORS = {
@@ -63,20 +61,17 @@ const ZH = {
   SADNESS: '悲伤', SURPRISE: '惊讶', JOY: '喜悦', LOVE: '爱',
 };
 
-/* — L1: Core emotion pills (normalised proportions across all 7 cores) — */
 function renderLayer1(wheelData, primaryCore) {
   const el = document.getElementById('layer1-pills');
   el.innerHTML = '';
-
-  // Normalise: each core's share of the total detected emotion signal
-  const totalScore = CORES.reduce((sum, c) => sum + (wheelData[c]?.score || 0), 0);
+  const totalScore = CORES.reduce((s, c) => s + (wheelData[c]?.score || 0), 0);
 
   CORES.forEach(core => {
-    const score     = wheelData[c = core]?.score || 0;
-    const pct       = totalScore > 0 ? Math.round((score / totalScore) * 100) : 0;
-    const isActive  = score >= 0.02;   // lowered threshold
+    const score    = wheelData[core]?.score || 0;
+    const pct      = totalScore > 0 ? Math.round((score / totalScore) * 100) : 0;
+    const isActive = score >= 0.02;
     const isPrimary = core === primaryCore;
-    const color     = COLORS[core];
+    const color    = COLORS[core];
 
     const pill = document.createElement('div');
     pill.className = `core-pill ${isActive ? 'active' : 'inactive'} ${isPrimary ? 'primary' : ''}`;
@@ -93,18 +88,15 @@ function renderLayer1(wheelData, primaryCore) {
   });
 }
 
-/* — L2: Sub-emotion groups (Junto middle ring) — */
 function renderLayer2(wheelData) {
   const el = document.getElementById('layer2-groups');
   el.innerHTML = '';
   let hasAny = false;
-
   CORES.forEach(core => {
     const subs = wheelData[core]?.sub || [];
     if (!subs.length) return;
     hasAny = true;
     const color = COLORS[core];
-
     const group = document.createElement('div');
     group.className = 'sub-group';
     group.innerHTML = `
@@ -119,23 +111,18 @@ function renderLayer2(wheelData) {
       </div>`;
     el.appendChild(group);
   });
-
   if (!hasAny) el.innerHTML = '<p style="color:var(--text-hint);font-size:0.85rem">未检测到明显的细化情绪</p>';
 }
 
-/* — L3: Fine-grain GoEmotions labels — */
 function renderLayer3(wheelData) {
   const el = document.getElementById('layer3-rows');
   el.innerHTML = '';
-
   const all = [];
   CORES.forEach(core => {
     (wheelData[core]?.sub || []).forEach(s => all.push({ ...s, color: COLORS[core] }));
   });
   all.sort((a, b) => b.score - a.score);
-
   if (!all.length) { el.innerHTML = '<p style="color:var(--text-hint);font-size:0.85rem">未检测到具体情绪</p>'; return; }
-
   all.forEach(item => {
     const row = document.createElement('div');
     row.className = 'fine-row';
@@ -145,23 +132,20 @@ function renderLayer3(wheelData) {
       <span class="fine-arrow">→</span>
       <span class="fine-label-zh" style="color:${item.color}">${item.zh}</span>
       <div class="fine-bar-track">
-        <div class="fine-bar-fill" style="width:${Math.round(item.score * 100)}%;background:${item.color}99"></div>
+        <div class="fine-bar-fill" style="width:${Math.round(item.score*100)}%;background:${item.color}99"></div>
       </div>
-      <span class="fine-score">${Math.round(item.score * 100)}%</span>`;
+      <span class="fine-score">${Math.round(item.score*100)}%</span>`;
     el.appendChild(row);
   });
 }
 
-/* ── Render full analysis ── */
 function renderAnalysis(data) {
   document.getElementById('emotion-summary').textContent = data.emotion_summary || '';
   document.getElementById('emotion-trigger').textContent = data.trigger || '';
 
-  // Debug: show translated text
   const debugPanel = document.getElementById('debug-panel');
-  const debugText  = document.getElementById('debug-translated');
   if (data.translated_text) {
-    debugText.textContent = data.translated_text;
+    document.getElementById('debug-translated').textContent = data.translated_text;
     debugPanel.style.display = 'block';
   } else {
     debugPanel.style.display = 'none';
@@ -178,7 +162,7 @@ function renderAnalysis(data) {
   (data.emotion_labels || []).forEach(({ label, color, score }) => {
     const tag = document.createElement('span');
     tag.className = 'emotion-tag';
-    tag.innerHTML = `<span class="emotion-dot" style="background:${color}"></span>${label}<span style="opacity:0.5;font-size:0.75rem">&nbsp;${Math.round(score * 100)}%</span>`;
+    tag.innerHTML = `<span class="emotion-dot" style="background:${color}"></span>${label}<span style="opacity:0.5;font-size:0.75rem">&nbsp;${Math.round(score*100)}%</span>`;
     labelsEl.appendChild(tag);
   });
 }
@@ -188,6 +172,7 @@ document.querySelectorAll('.choice-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
+    state.lastChoice = btn.dataset.choice;
     try {
       const res  = await fetch('/api/respond', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -201,7 +186,72 @@ document.querySelectorAll('.choice-btn').forEach(btn => {
   });
 });
 
-/* ── Navigation ── */
+/* ══════════════════════════════════════════════════════
+   MARS MODE
+══════════════════════════════════════════════════════ */
+let marsScene = null;
+
+document.getElementById('btn-mars').addEventListener('click', async () => {
+  showStep('mars');
+
+  const statusEl  = document.getElementById('mars-status');
+  const countEl   = document.getElementById('mars-count');
+  const actionsEl = document.getElementById('mars-actions');
+  statusEl.textContent  = '正在连接火星……';
+  countEl.textContent   = '';
+  actionsEl.style.display = 'none';
+
+  /* Init / reinit Three.js scene */
+  if (marsScene) { marsScene.dispose(); marsScene = null; }
+  marsScene = new MarsScene('mars-canvas-wrap');
+  marsScene.init();
+
+  /* Load all existing particles (historical) */
+  try {
+    const res  = await fetch('/api/mars/particles');
+    const data = await res.json();
+    marsScene.loadParticles(data.particles || []);
+    if (data.particles?.length) {
+      countEl.textContent = `火星上已积累 ${data.particles.length} 个人类情绪粒子`;
+    }
+  } catch { /* non-fatal */ }
+
+  /* Save new particle to backend */
+  const color = COLORS[state.primaryCore] || '#aaaaaa';
+  try {
+    await fetch('/api/mars/launch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ core: state.primaryCore, color, choice: state.lastChoice }),
+    });
+  } catch { /* non-fatal */ }
+
+  /* Launch animation */
+  statusEl.textContent = '正在发射……';
+  const { behavior, promise } = marsScene.launch(color, state.lastChoice, 7);
+  await promise;
+
+  /* Settled */
+  statusEl.textContent = (typeof BEHAVIOR_MSG !== 'undefined' && BEHAVIOR_MSG[behavior])
+    ? BEHAVIOR_MSG[behavior]
+    : '情绪粒子已抵达火星 ✦';
+  try {
+    const res2  = await fetch('/api/mars/particles');
+    const data2 = await res2.json();
+    countEl.textContent = `火星上现有 ${data2.particles.length} 个来自人类的情绪粒子`;
+  } catch { /* non-fatal */ }
+
+  actionsEl.style.display = 'flex';
+});
+
+/* Mars → continue / end */
+document.getElementById('btn-mars-continue').addEventListener('click', () => {
+  document.getElementById('user-input').value = '';
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
+  showStep('input');
+});
+document.getElementById('btn-mars-end').addEventListener('click', () => showStep('end'));
+
+/* ── Standard navigation ── */
 document.getElementById('btn-continue').addEventListener('click', () => {
   document.getElementById('user-input').value = '';
   document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));

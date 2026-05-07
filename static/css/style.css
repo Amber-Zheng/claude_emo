@@ -277,6 +277,85 @@ textarea:focus { outline: none; border-color: var(--accent); }
 #step-end h2 { margin-bottom: 12px; }
 #step-end .btn { margin-top: 28px; }
 
+/* ── Mars launch button ── */
+.btn-mars {
+  width: 100%;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #b83a08 0%, #e8622a 50%, #ff8040 100%);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  box-shadow: 0 4px 24px rgba(184, 58, 8, 0.4);
+  border: none;
+}
+.btn-mars:hover {
+  background: linear-gradient(135deg, #cc4510 0%, #f07030 50%, #ff9050 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 32px rgba(184, 58, 8, 0.6);
+}
+.btn-mars:active { transform: translateY(0); }
+
+/* ── Mars step ── */
+.mars-step {
+  position: relative;
+  height: 500px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid rgba(184, 80, 20, 0.35);
+  box-shadow: 0 0 40px rgba(184, 80, 20, 0.12);
+}
+
+.mars-canvas-wrap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #050510;
+}
+
+.mars-canvas-wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.mars-overlay {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 28px 28px 24px;
+  background: linear-gradient(to top,
+    rgba(5, 5, 16, 0.96) 0%,
+    rgba(5, 5, 16, 0.70) 55%,
+    transparent 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mars-status {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffb080;
+  min-height: 1.5em;
+}
+
+.mars-count {
+  font-size: 0.8rem;
+  color: rgba(255, 160, 80, 0.55);
+  min-height: 1.2em;
+}
+
+.mars-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+@media (max-width: 480px) {
+  .mars-step { height: 400px; }
+}
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 24px; left: 50%;

@@ -132,17 +132,31 @@
       </div>
     </section>
 
-    <!-- Step 4: Feedback -->
+    <!-- Step 4: Feedback + Mars entry -->
     <section id="step-feedback" class="card step">
       <div class="step-label">情绪循环完成</div>
       <div class="feedback-text" id="feedback-text"></div>
+      <button id="btn-mars" class="btn btn-mars">🚀 发射到火星</button>
       <div class="cycle-actions">
         <button id="btn-continue" class="btn btn-secondary">继续表达</button>
         <button id="btn-end" class="btn btn-ghost">结束本轮</button>
       </div>
     </section>
 
-    <!-- Step 5: End -->
+    <!-- Step 5: Mars Mode -->
+    <section id="step-mars" class="step mars-step">
+      <div id="mars-canvas-wrap" class="mars-canvas-wrap"></div>
+      <div class="mars-overlay">
+        <p id="mars-status" class="mars-status"></p>
+        <p id="mars-count"  class="mars-count"></p>
+        <div id="mars-actions" class="mars-actions" style="display:none">
+          <button id="btn-mars-continue" class="btn btn-secondary">继续表达</button>
+          <button id="btn-mars-end"      class="btn btn-ghost">结束本轮</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 6: End -->
     <section id="step-end" class="card step">
       <div class="end-icon">✦</div>
       <h2>今天辛苦了。</h2>
@@ -152,6 +166,8 @@
 
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="/static/js/mars.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
