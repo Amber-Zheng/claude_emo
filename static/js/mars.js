@@ -25,16 +25,25 @@ const CORE_ZH = {
   SADNESS: '悲伤', SURPRISE: '惊讶', JOY: '喜悦', LOVE: '爱', NEUTRAL: '平静',
 };
 
+// Vivid Lusion-style trail palette
+const TRAIL_PAL = [
+  0xFF2D55, 0xFF6B35, 0xFFD60A, 0x30D158, 0x00C7FF,
+  0xBF5AF2, 0xFF375F, 0x34C759, 0x64D2FF, 0xFF9F0A,
+  0xAC8FFF, 0xFF6EC7, 0x00FF9F, 0xFFE234,
+];
+
 class MarsScene {
   constructor(containerId) {
-    this.container  = document.getElementById(containerId);
-    this._active    = [];   // {mesh, phase:'launch'|'behavior', t, behT, behavior, core, ...}
-    this._orbiters  = [];   // {mesh, orbit:{r,speed,tilt,yaw,t}}
-    this._interactable = []; // {mesh, core, baseScale, phaseOff} — persistent particles only
-    this._hovered   = null;
-    this._t         = 0;
-    this._lastT     = performance.now();
-    this.raf        = null;
+    this.container      = document.getElementById(containerId);
+    this._active        = [];   // {mesh, phase, behavior, core, …}
+    this._orbiters      = [];   // {mesh, orbit}
+    this._interactable  = [];   // {mesh, core, baseScale, phaseOff}
+    this._sprites       = [];   // Lusion-style trail/burst geo particles
+    this._hovered       = null;
+    this._lastTrailPos  = null;
+    this._t             = 0;
+    this._lastT         = performance.now();
+    this.raf            = null;
   }
 
   /* ── Init ─────────────────────────────────────────────────────────────── */
@@ -53,7 +62,6 @@ class MarsScene {
     this.renderer.setClearColor(0x000000, 0);
     this.container.appendChild(this.renderer.domElement);
 
-    /* Lights */
     this.scene.add(new THREE.AmbientLight(0x331a0a, 2.0));
     const sun = new THREE.DirectionalLight(0xffccaa, 3.0);
     sun.position.set(8, 4, 6);
@@ -66,6 +74,7 @@ class MarsScene {
     this._buildAtmo();
     this._buildStars();
     this._buildTooltip();
+    this._initSpriteGeos();
     this._setupRaycaster();
 
     this._onResize = () => {
@@ -78,10 +87,9 @@ class MarsScene {
     this._loop();
   }
 
-  /* ── Tooltip + raycaster setup ──────────────────────────────────────────── */
+  /* ── Tooltip ──────────────────────────────────────────────────────────── */
   _buildTooltip() {
     this.container.style.position = 'relative';
-
     this._tooltip = document.createElement('div');
     Object.assign(this._tooltip.style, {
       position:       'absolute',
@@ -97,12 +105,44 @@ class MarsScene {
       border:         '1px solid rgba(255,255,255,0.18)',
       backdropFilter: 'blur(6px)',
       transform:      'translate(-50%, -100%)',
-      transition:     'opacity 0.15s',
       zIndex:         '10',
     });
     this.container.appendChild(this._tooltip);
   }
 
+  /* ── Lusion sprite geometry cache ─────────────────────────────────────── */
+  _initSpriteGeos() {
+    // Triangle (equilateral, unit circumradius)
+    const triV = new Float32Array([
+       0,      0.667,  0,
+      -0.577, -0.333,  0,
+       0.577, -0.333,  0,
+    ]);
+    const triGeo = new THREE.BufferGeometry();
+    triGeo.setAttribute('position', new THREE.BufferAttribute(triV, 3));
+    triGeo.setIndex([0, 1, 2]);
+
+    // Diamond (rhombus)
+    const diaV = new Float32Array([
+       0,    1,   0,
+      -0.6,  0,   0,
+       0,   -1,   0,
+       0.6,  0,   0,
+    ]);
+    const diaGeo = new THREE.BufferGeometry();
+    diaGeo.setAttribute('position', new THREE.BufferAttribute(diaV, 3));
+    diaGeo.setIndex([0, 1, 2, 0, 2, 3]);
+
+    // Square & pentagon
+    const sqrGeo = new THREE.PlaneGeometry(1, 1);
+    const penGeo = new THREE.CircleGeometry(0.65, 5);
+
+    const solid = [triGeo, diaGeo, sqrGeo, penGeo];
+    const edges = solid.map(g => new THREE.EdgesGeometry(g));
+    this._geos  = { solid, edges };
+  }
+
+  /* ── Raycaster + mouse trail ──────────────────────────────────────────── */
   _setupRaycaster() {
     this._raycaster = new THREE.Raycaster();
     this._mouse     = new THREE.Vector2(-10, -10);
@@ -111,12 +151,168 @@ class MarsScene {
       const rect = this.renderer.domElement.getBoundingClientRect();
       this._mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
       this._mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+
+      // Lusion trail: spawn geometric particles along mouse path
+      const wp = this._mouseWorld(4.1);
+      const dist = this._lastTrailPos ? this._lastTrailPos.distanceTo(wp) : 1;
+      if (dist > 0.055) {
+        const vel = this._lastTrailPos
+          ? wp.clone().sub(this._lastTrailPos).multiplyScalar(18)
+          : new THREE.Vector3();
+        const count = Math.min(3, 1 + Math.floor(dist / 0.14));
+        this._spawnTrail(wp, count, vel);
+        this._lastTrailPos = wp.clone();
+      }
     };
+
     this._onMouseLeave = () => {
       this._mouse.set(-10, -10);
+      this._lastTrailPos = null;
     };
+
     this.renderer.domElement.addEventListener('mousemove',  this._onMouseMove);
     this.renderer.domElement.addEventListener('mouseleave', this._onMouseLeave);
+  }
+
+  // Returns 3D world point along mouse ray at given camera-distance.
+  _mouseWorld(depth) {
+    this._raycaster.setFromCamera(this._mouse, this.camera);
+    return this._raycaster.ray.origin.clone()
+      .addScaledVector(this._raycaster.ray.direction, depth);
+  }
+
+  /* ── Sprite factory ───────────────────────────────────────────────────── */
+  _makeSpriteMesh(size, wireframe, color) {
+    const idx = Math.floor(Math.random() * 4);
+    let mesh;
+    if (wireframe) {
+      const mat = new THREE.LineBasicMaterial({
+        color, transparent: true, opacity: 1, depthWrite: false,
+      });
+      mesh = new THREE.LineSegments(this._geos.edges[idx], mat);
+    } else {
+      const mat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 1,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      mesh = new THREE.Mesh(this._geos.solid[idx], mat);
+    }
+    // Random initial orientation for 3D tumbling feel
+    mesh.rotation.set(
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+    );
+    mesh.scale.setScalar(size);
+    return mesh;
+  }
+
+  /* ── Trail particles ──────────────────────────────────────────────────── */
+  _spawnTrail(worldPos, count, mouseVel) {
+    for (let i = 0; i < count; i++) {
+      const color = new THREE.Color(TRAIL_PAL[Math.floor(Math.random() * TRAIL_PAL.length)]);
+      const size  = 0.045 + Math.random() * 0.085;
+      const wire  = Math.random() < 0.45;
+      const mesh  = this._makeSpriteMesh(size, wire, color);
+
+      mesh.position.copy(worldPos);
+      mesh.position.x += (Math.random() - 0.5) * 0.18;
+      mesh.position.y += (Math.random() - 0.5) * 0.18;
+      mesh.position.z += (Math.random() - 0.5) * 0.12;
+
+      // Radial scatter + mouse-direction bias
+      const spd   = 1.6 + Math.random() * 2.6;
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const vel   = new THREE.Vector3(
+        spd * Math.sin(phi) * Math.cos(theta),
+        spd * Math.sin(phi) * Math.sin(theta),
+        spd * Math.cos(phi) * 0.22,
+      );
+      if (mouseVel.length() > 0.01) {
+        vel.addScaledVector(mouseVel.clone().normalize(), spd * 0.45);
+      }
+
+      const angSpeed = Math.PI * 2 + Math.random() * Math.PI * 7;
+      const angAxis  = new THREE.Vector3(
+        Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5,
+      ).normalize();
+
+      this.scene.add(mesh);
+      this._sprites.push({
+        mesh, vel, angAxis, angSpeed,
+        life: 0, maxLife: 0.72 + Math.random() * 0.52, baseScale: size,
+      });
+    }
+
+    // Hard cap to keep GPU happy
+    while (this._sprites.length > 110) {
+      const old = this._sprites.shift();
+      this.scene.remove(old.mesh);
+      old.mesh.material.dispose();
+    }
+  }
+
+  /* ── Burst on hover ───────────────────────────────────────────────────── */
+  _spawnBurst(position, emotionColor) {
+    const count = 14;
+    for (let i = 0; i < count; i++) {
+      const vivid = new THREE.Color().setHSL(Math.random(), 0.95, 0.62);
+      const color = emotionColor.clone().lerp(vivid, 0.38);
+      const size  = 0.032 + Math.random() * 0.052;
+      const wire  = Math.random() < 0.55;
+      const mesh  = this._makeSpriteMesh(size, wire, color);
+      mesh.position.copy(position);
+
+      const spd   = 2.8 + Math.random() * 4.2;
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const vel   = new THREE.Vector3(
+        spd * Math.sin(phi) * Math.cos(theta),
+        spd * Math.sin(phi) * Math.sin(theta),
+        spd * Math.cos(phi) * 0.5,
+      );
+
+      const angSpeed = Math.PI * 5 + Math.random() * Math.PI * 10;
+      const angAxis  = new THREE.Vector3(
+        Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5,
+      ).normalize();
+
+      this.scene.add(mesh);
+      this._sprites.push({
+        mesh, vel, angAxis, angSpeed,
+        life: 0, maxLife: 0.38 + Math.random() * 0.24, baseScale: size,
+      });
+    }
+  }
+
+  /* ── Sprite update ────────────────────────────────────────────────────── */
+  _updateSprites(dt) {
+    this._sprites = this._sprites.filter(p => {
+      p.life += dt / p.maxLife;
+      if (p.life >= 1) {
+        this.scene.remove(p.mesh);
+        p.mesh.material.dispose();
+        return false;
+      }
+
+      // Exponential deceleration — feels like light objects losing momentum
+      p.vel.multiplyScalar(Math.exp(-3.2 * dt));
+      p.mesh.position.addScaledVector(p.vel, dt);
+
+      // Tumble
+      p.mesh.rotateOnAxis(p.angAxis, p.angSpeed * dt);
+
+      // Bell-curve scale: spawn small, peak at 30% life, shrink away
+      p.mesh.scale.setScalar(p.baseScale * Math.sin(p.life * Math.PI));
+
+      // Hold opacity then fade in last 40%
+      p.mesh.material.opacity = p.life < 0.6
+        ? 1
+        : 1 - (p.life - 0.6) / 0.4;
+
+      return true;
+    });
   }
 
   /* ── Mars ─────────────────────────────────────────────────────────────── */
@@ -227,18 +423,16 @@ class MarsScene {
     this._registerInteractable(mesh, core, 0.7);
   }
 
-  /* Adds a mesh to the hover/breathing pool */
   _registerInteractable(mesh, core, baseScale = 0.65) {
     this._interactable.push({
       mesh,
-      core:      core || 'NEUTRAL',
+      core:     core || 'NEUTRAL',
       baseScale,
-      phaseOff:  Math.random() * Math.PI * 2,
+      phaseOff: Math.random() * Math.PI * 2,
     });
   }
 
-  /* ── Launch new emotion particles (called from app.js) ─────────────────── */
-  // launch(hexColor, choice, core, count) → { behavior, promise }
+  /* ── Launch ─────────────────────────────────────────────────────────────── */
   launch(hexColor, choice, core, count = 7) {
     const CHOICE_MAP = {
       F1:'stable', F2:'dissolve', F3:'recolor',
@@ -264,15 +458,13 @@ class MarsScene {
             opacity: 1.0,
           });
           const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), mat);
-
           const sx=(Math.random()-0.5)*0.7, sy=-4.5-Math.random()*0.8, sz=4.5+Math.random()*0.4;
           mesh.position.set(sx, sy, sz);
 
           this._active.push({
             mesh, phase:'launch', behavior, hexColor, core,
             sx, sy, sz, tx, ty, tz,
-            t:0, speed:0.012+Math.random()*0.007,
-            behT:0,
+            t:0, speed:0.012+Math.random()*0.007, behT:0,
             flyDir: behavior === 'flyaway'
               ? new THREE.Vector3((Math.random()-0.5)*0.4, 1+Math.random()*0.5, (Math.random()-0.5)*0.4).normalize()
               : null,
@@ -302,7 +494,6 @@ class MarsScene {
 
     if (this.mars) this.mars.rotation.y += 0.0012;
 
-    /* Orbiter positions */
     this._orbiters.forEach(({ mesh, orbit }) => {
       orbit.t += orbit.speed;
       const { r, tilt, yaw, t: phi } = orbit;
@@ -311,20 +502,21 @@ class MarsScene {
       mesh.position.z = r*(-Math.cos(phi)*Math.sin(yaw) + Math.sin(phi)*Math.cos(tilt)*Math.cos(yaw));
     });
 
-    /* Active particles */
-    this._active = this._active.filter(p => {
-      if (p.phase === 'launch') return this._updateLaunch(p, dt);
-      return this._updateBehavior(p, dt);
-    });
+    this._active = this._active.filter(p =>
+      p.phase === 'launch' ? this._updateLaunch(p, dt) : this._updateBehavior(p, dt)
+    );
 
-    /* Breathing pulse for all interactable particles */
+    // Breathing pulse on all persistent emotion particles
     this._interactable.forEach(item => {
-      if (item.mesh === this._hovered) return; // hover overrides
+      if (item.mesh === this._hovered) return;
       item.mesh.material.emissiveIntensity =
         0.22 + Math.sin(this._t * 1.6 + item.phaseOff) * 0.14;
     });
 
-    /* Hover detection + tooltip */
+    // Lusion-style geometric sprites
+    this._updateSprites(dt);
+
+    // Hover detection + tooltip
     this._updateHover();
 
     this.renderer.render(this.scene, this.camera);
@@ -354,15 +546,11 @@ class MarsScene {
     const { mesh, behavior, hexColor, core } = p;
     switch (behavior) {
       case 'stable':
-        this._registerInteractable(mesh, core);
-        break;
+        this._registerInteractable(mesh, core); break;
       case 'dissolve':
-        mesh.material.transparent = true;
-        mesh.material.opacity = 1;
-        break;
+        mesh.material.transparent = true; mesh.material.opacity = 1; break;
       case 'recolor':
-        this._registerInteractable(mesh, core);
-        break;
+        this._registerInteractable(mesh, core); break;
       case 'flyaway':
         break;
       case 'float':
@@ -381,10 +569,9 @@ class MarsScene {
   _updateBehavior(p, dt) {
     p.behT += dt;
     const { mesh, behavior, behT } = p;
-
     switch (behavior) {
       case 'stable':
-        return true; // breathing loop handles emissive
+        return true;
 
       case 'dissolve': {
         const progress = behT / 4.0;
@@ -399,15 +586,13 @@ class MarsScene {
         const lerped = new THREE.Color(p.hexColor).lerp(new THREE.Color(RECOLOR_TARGET), shiftT);
         mesh.material.color.set(lerped);
         mesh.material.emissive.set(lerped);
-        // emissiveIntensity handled by breathing loop
         return true;
       }
 
       case 'flyaway': {
         if (behT < 0.35) return true;
         const ft = behT - 0.35;
-        const spd = 0.06 + ft*0.12;
-        mesh.position.addScaledVector(p.flyDir, spd);
+        mesh.position.addScaledVector(p.flyDir, 0.06 + ft*0.12);
         mesh.material.transparent = true;
         mesh.material.opacity = Math.max(0, 1 - ft*0.55);
         mesh.material.emissiveIntensity = Math.max(0, 1.8 - ft*2.5);
@@ -417,7 +602,7 @@ class MarsScene {
       }
 
       case 'root':
-        return true; // breathing loop handles emissive
+        return true;
 
       default:
         return true;
@@ -427,8 +612,7 @@ class MarsScene {
   /* ── Hover / tooltip ────────────────────────────────────────────────────── */
   _updateHover() {
     this._raycaster.setFromCamera(this._mouse, this.camera);
-    const meshes = this._interactable.map(p => p.mesh);
-    const hits   = this._raycaster.intersectObjects(meshes);
+    const hits    = this._raycaster.intersectObjects(this._interactable.map(p => p.mesh));
     const hitMesh = hits.length > 0 ? hits[0].object : null;
 
     if (hitMesh === this._hovered) {
@@ -436,7 +620,7 @@ class MarsScene {
       return;
     }
 
-    /* Un-hover previous */
+    // Un-hover previous
     if (this._hovered) {
       const prev = this._interactable.find(p => p.mesh === this._hovered);
       if (prev) this._hovered.scale.setScalar(prev.baseScale);
@@ -445,12 +629,14 @@ class MarsScene {
 
     this._hovered = hitMesh;
 
-    /* Apply hover to new target */
     if (hitMesh) {
       const item = this._interactable.find(p => p.mesh === hitMesh);
       if (item) {
         hitMesh.scale.setScalar(item.baseScale * 2.4);
         hitMesh.material.emissiveIntensity = 1.5;
+
+        // Burst of geometric fragments
+        this._spawnBurst(hitMesh.position, hitMesh.material.color);
 
         const label = CORE_ZH[item.core] || item.core || '情绪';
         this._tooltip.textContent = label;
@@ -466,10 +652,8 @@ class MarsScene {
   _positionTooltip() {
     const pos = this._hovered.position.clone().project(this.camera);
     const el  = this.renderer.domElement;
-    const x   = (pos.x  *  0.5 + 0.5) * el.clientWidth;
-    const y   = (pos.y  * -0.5 + 0.5) * el.clientHeight;
-    this._tooltip.style.left = x + 'px';
-    this._tooltip.style.top  = (y - 10) + 'px';
+    this._tooltip.style.left = ((pos.x *  0.5 + 0.5) * el.clientWidth)  + 'px';
+    this._tooltip.style.top  = ((pos.y * -0.5 + 0.5) * el.clientHeight - 10) + 'px';
   }
 
   /* ── Root tendrils ──────────────────────────────────────────────────────── */
@@ -478,21 +662,18 @@ class MarsScene {
     const up = Math.abs(N.y) < 0.9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0);
     const T1 = up.clone().cross(N).normalize();
     const T2 = N.clone().cross(T1).normalize();
-
     const col  = new THREE.Color(hexColor);
     const mat  = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.5 });
     const n    = 4 + Math.floor(Math.random()*3);
-
     for (let i = 0; i < n; i++) {
       const angle   = (i/n)*Math.PI*2 + (Math.random()-0.5)*0.6;
       const len     = 0.07 + Math.random()*0.06;
-      const tangent = T1.clone().multiplyScalar(Math.cos(angle))
-                               .addScaledVector(T2, Math.sin(angle));
-      const end = position.clone()
-                           .addScaledVector(tangent, len)
-                           .addScaledVector(N, -0.018);
-      const geo = new THREE.BufferGeometry().setFromPoints([position.clone(), end]);
-      this.scene.add(new THREE.Line(geo, mat.clone()));
+      const tangent = T1.clone().multiplyScalar(Math.cos(angle)).addScaledVector(T2, Math.sin(angle));
+      const end = position.clone().addScaledVector(tangent, len).addScaledVector(N, -0.018);
+      this.scene.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([position.clone(), end]),
+        mat.clone(),
+      ));
     }
   }
 
@@ -518,6 +699,13 @@ class MarsScene {
     this.renderer.domElement.removeEventListener('mousemove',  this._onMouseMove);
     this.renderer.domElement.removeEventListener('mouseleave', this._onMouseLeave);
     if (this._tooltip) this._tooltip.remove();
+    // Clean up sprite particles
+    this._sprites.forEach(p => { this.scene.remove(p.mesh); p.mesh.material.dispose(); });
+    this._sprites = [];
+    // Dispose cached geometries
+    if (this._geos) {
+      [...this._geos.solid, ...this._geos.edges].forEach(g => g.dispose());
+    }
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
